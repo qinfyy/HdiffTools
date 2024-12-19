@@ -5,6 +5,7 @@ Imports SharpCompress.Archives
 
 Public Class Form1
     Delegate Sub 写入日志框委托(text As String)
+    Delegate Sub 清空日志框委托()
 
     Private 客户端路径 As String
     Private 差分包路径 As String
@@ -12,6 +13,9 @@ Public Class Form1
 
     Private 差分包是否压缩包 As Boolean = False
     Private 语音差分包是否压缩包 As Boolean = False
+
+    Private V2差分包 As Boolean = False
+    Private V2语音差分包 As Boolean = False
 
     Private hpatchzExe As String
 
@@ -21,6 +25,14 @@ Public Class Form1
         Else
             TextBox4.AppendText(text & Environment.NewLine)
             TextBox4.ScrollToCaret()
+        End If
+    End Sub
+
+    Private Sub 清空日志框()
+        If TextBox4.InvokeRequired Then
+            TextBox4.Invoke(New 清空日志框委托(AddressOf 清空日志框))
+        Else
+            TextBox4.Clear()
         End If
     End Sub
 
@@ -82,26 +94,56 @@ Public Class Form1
         End If
 
         If Not 差分包是否压缩包 Then
-            If Not File.Exists(Path.Combine(差分包路径, "deletefiles.txt")) OrElse Not File.Exists(Path.Combine(差分包路径, "hdifffiles.txt")) Then
+            If Not File.Exists(Path.Combine(差分包路径, "deletefiles.txt")) Then
+                MessageBox.Show("差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            ElseIf File.Exists(Path.Combine(差分包路径, "hdifffiles.txt")) Then
+                V2差分包 = False
+            ElseIf File.Exists(Path.Combine(差分包路径, "hdiffmap.json")) Then
+                V2差分包 = True
+            Else
                 MessageBox.Show("差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 Return
             End If
         Else
-            If Not 检查压缩包中的文件(差分包路径, "hdifffiles.txt") OrElse Not 检查压缩包中的文件(差分包路径, "deletefiles.txt") Then
+            If Not 检查压缩包中的文件(差分包路径, "deletefiles.txt") Then
+                MessageBox.Show("差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            ElseIf 检查压缩包中的文件(差分包路径, "hdifffiles.txt") Then
+                V2差分包 = False
+            ElseIf 检查压缩包中的文件(差分包路径, "hdiffmap.json") Then
+                V2差分包 = True
+            Else
                 MessageBox.Show("差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 Return
             End If
         End If
 
-        If Not 语音差分包是否压缩包 Then
-            If CheckBox1.Checked AndAlso Not File.Exists(Path.Combine(语音差分包路径, "hdifffiles.txt")) OrElse Not File.Exists(Path.Combine(差分包路径, "deletefiles.txt")) Then
-                MessageBox.Show("语音差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                Return
-            End If
-        Else
-            If CheckBox1.Checked AndAlso Not 检查压缩包中的文件(语音差分包路径, "hdifffiles.txt") OrElse Not 检查压缩包中的文件(差分包路径, "deletefiles.txt") Then
-                MessageBox.Show("语音差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                Return
+        If CheckBox1.Checked Then
+            If Not 语音差分包是否压缩包 Then
+                If Not File.Exists(Path.Combine(语音差分包路径, "deletefiles.txt")) Then
+                    MessageBox.Show("差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Return
+                ElseIf File.Exists(Path.Combine(语音差分包路径, "hdifffiles.txt")) Then
+                    V2语音差分包 = False
+                ElseIf File.Exists(Path.Combine(语音差分包路径, "hdiffmap.txt")) Then
+                    V2语音差分包 = True
+                Else
+                    MessageBox.Show("语音差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Return
+                End If
+            Else
+                If Not 检查压缩包中的文件(差分包路径, "deletefiles.txt") Then
+                    MessageBox.Show("语音差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Return
+                ElseIf 检查压缩包中的文件(语音差分包路径, "hdifffiles.txt") Then
+                    V2语音差分包 = False
+                ElseIf 检查压缩包中的文件(语音差分包路径, "hdiffmap.txt") Then
+                    V2语音差分包 = True
+                Else
+                    MessageBox.Show("语音差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Return
+                End If
             End If
         End If
 
@@ -114,6 +156,7 @@ Public Class Form1
         End If
 
         Button1.Enabled = False
+        清空日志框()
         BackgroundWorker1.RunWorkerAsync()
     End Sub
 
@@ -153,8 +196,6 @@ Public Class Form1
 
             Dim deleteFiles As List(Of String) = File.ReadLines(Path.Combine(差分包路径, "deletefiles.txt")).ToList()
             Dim deleteFilesAudio As List(Of String) = If(CheckBox1.Checked, File.ReadLines(Path.Combine(语音差分包路径, "deletefiles.txt")).ToList(), New List(Of String)())
-            Dim hdiffFiles As List(Of String) = File.ReadLines(Path.Combine(差分包路径, "hdifffiles.txt")).ToList()
-            Dim hdiffFilesAudio As List(Of String) = If(CheckBox1.Checked, File.ReadLines(Path.Combine(语音差分包路径, "hdifffiles.txt")).ToList(), New List(Of String)())
 
             删除只读属性(客户端路径)
             删除只读属性(差分包路径)
@@ -166,8 +207,8 @@ Public Class Form1
             Dim temp目录 As String = Path.Combine(客户端路径, "temp")
             Directory.CreateDirectory(temp目录)
 
-            应用补丁(hdiffFiles, 客户端路径, 差分包路径, temp目录)
-            If CheckBox1.Checked Then 应用补丁(hdiffFilesAudio, 客户端路径, 语音差分包路径, temp目录)
+            应用补丁(客户端路径, 差分包路径, temp目录, V2差分包)
+            If CheckBox1.Checked Then 应用补丁(客户端路径, 语音差分包路径, temp目录, V2语音差分包)
             移动文件(差分包路径, 客户端路径)
             If CheckBox1.Checked Then 移动文件(语音差分包路径, 客户端路径)
 
@@ -190,25 +231,49 @@ Public Class Form1
         End If
     End Sub
 
-    Private Sub 应用补丁(hdiffFiles As List(Of String), 客户端目录 As String, 差分包目录 As String, 临时目录 As String)
-        For Each line As String In hdiffFiles
-            Dim patchInfo As JsonObject = JsonSerializer.Deserialize(Of JsonObject)(line)
-            Dim remoteName As String = patchInfo("remoteName").ToString()
-            Dim baseName As String = Path.GetFileName(remoteName)
+    Private Sub 应用补丁(客户端目录 As String, 差分包目录 As String, 临时目录 As String, IsV2 As Boolean)
+        If Not IsV2 Then
+            Dim hdiffFiles As List(Of String) = File.ReadLines(Path.Combine(差分包目录, "hdifffiles.txt")).ToList()
+            For Each line As String In hdiffFiles
+                Dim patchInfo As JsonObject = JsonSerializer.Deserialize(Of JsonObject)(line)
+                Dim remoteName As String = patchInfo("remoteName").ToString()
+                Dim baseName As String = Path.GetFileName(remoteName)
 
-            写入日志框($"合并：{baseName}...")
+                写入日志框($"合并：{baseName}...")
 
-            Dim 源文件 As String = Path.Combine(客户端目录, remoteName)
-            Dim hdiff文件 As String = Path.Combine(差分包目录, remoteName & ".hdiff")
-            Dim 目标文件 As String = Path.Combine(临时目录, baseName)
+                Dim 源文件 As String = Path.Combine(客户端目录, remoteName)
+                Dim hdiff文件 As String = Path.Combine(差分包目录, remoteName & ".hdiff")
+                Dim 目标文件 As String = Path.Combine(临时目录, baseName)
 
-            Dim cmd As String = $"""{hpatchzExe}"" ""{源文件}"" ""{hdiff文件}"" ""{目标文件}"""
-            执行CMD(cmd)
+                Dim cmd As String = $"""{hpatchzExe}"" ""{源文件}"" ""{hdiff文件}"" ""{目标文件}"""
+                执行CMD(cmd)
 
-            If File.Exists(源文件) Then File.Delete(源文件)
-            If File.Exists(hdiff文件) Then File.Delete(hdiff文件)
-            File.Move(目标文件, 源文件)
-        Next
+                If File.Exists(源文件) Then File.Delete(源文件)
+                If File.Exists(hdiff文件) Then File.Delete(hdiff文件)
+                File.Move(目标文件, 源文件)
+            Next
+        Else
+            Dim hdiffFiles As JsonArray = JsonNode.Parse(File.ReadAllText(Path.Combine(差分包目录, "hdiffmap.json")))("diff_map").AsArray()
+            For Each json As JsonObject In hdiffFiles
+                Dim sourceFileName As String = json("source_file_name").ToString()
+                Dim targetFileName As String = json("target_file_name").ToString()
+                Dim patchFileName As String = json("patch_file_name").ToString()
+
+                写入日志框($"合并：{targetFileName}...")
+
+                Dim 源文件 As String = Path.Combine(客户端目录, sourceFileName)
+                Dim hdiff文件 As String = Path.Combine(差分包目录, patchFileName)
+                Dim 目标文件 As String = Path.Combine(客户端目录, targetFileName)
+                Dim 临时文件 As String = Path.Combine(临时目录, Path.GetFileName(targetFileName))
+
+                Dim cmd As String = $"""{hpatchzExe}"" ""{源文件}"" ""{hdiff文件}"" ""{临时文件}"""
+                执行CMD(cmd)
+
+                If File.Exists(源文件) Then File.Delete(源文件)
+                If File.Exists(hdiff文件) Then File.Delete(hdiff文件)
+                File.Move(临时文件, 目标文件)
+            Next
+        End If
     End Sub
 
     Private Sub 删除文件(文件路径 As String, 文件列表 As List(Of String))
