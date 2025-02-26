@@ -40,14 +40,25 @@ Public Class Form1
         Dim p As New Process()
         p.StartInfo.FileName = cmd
         p.StartInfo.RedirectStandardOutput = True
+        p.StartInfo.RedirectStandardError = True
         p.StartInfo.UseShellExecute = False
         p.StartInfo.CreateNoWindow = True
         p.Start()
 
-        Dim output As String = p.StandardOutput.ReadToEnd()
+        Dim stdOutput As String = p.StandardOutput.ReadToEnd()
+        Dim errorOutput As String = p.StandardError.ReadToEnd()
         p.WaitForExit()
-        写入日志框(output)
+
+        If Not String.IsNullOrEmpty(stdOutput) Then
+            写入日志框(stdOutput)
+        End If
+
+        If Not String.IsNullOrEmpty(errorOutput) Then
+            写入日志框(errorOutput)
+        End If
     End Sub
+
+
 
     Private Sub 删除只读属性(path As String)
         For Each file As String In Directory.GetFiles(path, "*", SearchOption.AllDirectories)
@@ -122,23 +133,23 @@ Public Class Form1
         If CheckBox1.Checked Then
             If Not 语音差分包是否压缩包 Then
                 If Not File.Exists(Path.Combine(语音差分包路径, "deletefiles.txt")) Then
-                    MessageBox.Show("差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    MessageBox.Show("语音差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
                     Return
                 ElseIf File.Exists(Path.Combine(语音差分包路径, "hdifffiles.txt")) Then
                     V2语音差分包 = False
-                ElseIf File.Exists(Path.Combine(语音差分包路径, "hdiffmap.txt")) Then
+                ElseIf File.Exists(Path.Combine(语音差分包路径, "hdiffmap.json")) Then
                     V2语音差分包 = True
                 Else
                     MessageBox.Show("语音差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
                     Return
                 End If
             Else
-                If Not 检查压缩包中的文件(差分包路径, "deletefiles.txt") Then
+                If Not 检查压缩包中的文件(语音差分包路径, "deletefiles.txt") Then
                     MessageBox.Show("语音差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
                     Return
                 ElseIf 检查压缩包中的文件(语音差分包路径, "hdifffiles.txt") Then
                     V2语音差分包 = False
-                ElseIf 检查压缩包中的文件(语音差分包路径, "hdiffmap.txt") Then
+                ElseIf 检查压缩包中的文件(语音差分包路径, "hdiffmap.json") Then
                     V2语音差分包 = True
                 Else
                     MessageBox.Show("语音差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
