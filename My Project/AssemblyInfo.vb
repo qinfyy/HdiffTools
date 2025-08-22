@@ -8,10 +8,10 @@ Imports System.Runtime.InteropServices
 
 '查看程序集特性的值
 
-<Assembly: AssemblyTitle("HdiffPatch")>
+<Assembly: AssemblyTitle("HdiffTools")>
 <Assembly: AssemblyDescription("")>
 <Assembly: AssemblyCompany("")>
-<Assembly: AssemblyProduct("HdiffPatch")>
+<Assembly: AssemblyProduct("HdiffTools")>
 <Assembly: AssemblyCopyright("Copyright © 2025 Cyt All Rights Reserved.")>
 <Assembly: AssemblyTrademark("")>
 

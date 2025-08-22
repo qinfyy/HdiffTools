@@ -6,9 +6,9 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{C4FC9438-21C4-4FF6-AEDC-812CF835E91C}</ProjectGuid>
     <OutputType>WinExe</OutputType>
-    <StartupObject>HdiffPatch.My.MyApplication</StartupObject>
-    <RootNamespace>HdiffPatch</RootNamespace>
-    <AssemblyName>HdiffPatch</AssemblyName>
+    <StartupObject>HdiffTools.My.MyApplication</StartupObject>
+    <RootNamespace>HdiffTools</RootNamespace>
+    <AssemblyName>HdiffTools</AssemblyName>
     <FileAlignment>512</FileAlignment>
     <MyType>WindowsForms</MyType>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
@@ -22,7 +22,7 @@
     <DefineDebug>true</DefineDebug>
     <DefineTrace>true</DefineTrace>
     <OutputPath>bin\Debug\</OutputPath>
-    <DocumentationFile>HdiffPatch.xml</DocumentationFile>
+    <DocumentationFile>HdiffTools.xml</DocumentationFile>
     <NoWarn>42016,41999,42017,42018,42019,42032,42036,42020,42021,42022</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
@@ -32,7 +32,7 @@
     <DefineTrace>true</DefineTrace>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
-    <DocumentationFile>HdiffPatch.xml</DocumentationFile>
+    <DocumentationFile>HdiffTools.xml</DocumentationFile>
     <NoWarn>42016,41999,42017,42018,42019,42032,42036,42020,42021,42022</NoWarn>
   </PropertyGroup>
   <PropertyGroup>
@@ -159,6 +159,7 @@
     </None>
     <None Include="App.config" />
     <None Include="packages.config" />
+    <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="hdiffz.exe">
