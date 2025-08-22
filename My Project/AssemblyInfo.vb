@@ -12,7 +12,7 @@ Imports System.Runtime.InteropServices
 <Assembly: AssemblyDescription("")>
 <Assembly: AssemblyCompany("")>
 <Assembly: AssemblyProduct("HdiffPatch")>
-<Assembly: AssemblyCopyright("Copyright © 2024 Cyt All Rights Reserved.")>
+<Assembly: AssemblyCopyright("Copyright © 2025 Cyt All Rights Reserved.")>
 <Assembly: AssemblyTrademark("")>
 
 <Assembly: ComVisible(False)>

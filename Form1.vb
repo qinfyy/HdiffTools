@@ -1,5 +1,10 @@
 ﻿Imports System.IO
+Imports System.Security.Cryptography
 Imports System.Text.Json
+Imports SharpCompress.Common
+Imports SharpCompress.Writers
+Imports SharpCompress.Writers.Zip
+Imports System.ComponentModel
 Imports System.Text.Json.Nodes
 Imports SharpCompress.Archives
 
@@ -11,6 +16,10 @@ Public Class Form1
     Private 差分包路径 As String
     Private 语音差分包路径 As String
 
+    Private 旧客户端路径 As String
+    Private 新客户端路径 As String
+    Private 差分包保存路径 As String
+
     Private 差分包是否压缩包 As Boolean = False
     Private 语音差分包是否压缩包 As Boolean = False
 
@@ -18,8 +27,11 @@ Public Class Form1
     Private V2语音差分包 As Boolean = False
 
     Private hpatchzExe As String
+    Private hdiffzExe As String
 
-    Private Sub 写入日志框(text As String)
+    Private 任务是否正在运行 As Boolean = False
+
+    Public Sub 写入日志框(text As String)
         If TextBox4.InvokeRequired Then
             TextBox4.Invoke(New 写入日志框委托(AddressOf 写入日志框), text)
         Else
@@ -28,7 +40,7 @@ Public Class Form1
         End If
     End Sub
 
-    Private Sub 清空日志框()
+    Public Sub 清空日志框()
         If TextBox4.InvokeRequired Then
             TextBox4.Invoke(New 清空日志框委托(AddressOf 清空日志框))
         Else
@@ -57,8 +69,6 @@ Public Class Form1
             写入日志框(errorOutput)
         End If
     End Sub
-
-
 
     Private Sub 删除只读属性(path As String)
         For Each file As String In Directory.GetFiles(path, "*", SearchOption.AllDirectories)
@@ -89,6 +99,11 @@ Public Class Form1
     End Sub
 
     Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
+        If 任务是否正在运行 Then
+            MessageBox.Show("当前已有任务正在运行，请等待完成后再试。", "警告：", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
+        End If
+
         If Not File.Exists("hpatchz.exe") Then
             MessageBox.Show("hpatchz.exe 文件不存在于程序路径下！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
             Return
@@ -168,6 +183,8 @@ Public Class Form1
 
         Button1.Enabled = False
         清空日志框()
+
+        任务是否正在运行 = True
         BackgroundWorker1.RunWorkerAsync()
     End Sub
 
@@ -179,8 +196,16 @@ Public Class Form1
             Button6.Enabled = False
         End If
 
+        ' 确保事件只绑定一次
+        RemoveHandler BackgroundWorker1.DoWork, AddressOf BackgroundWorker1_DoWork
+        RemoveHandler BackgroundWorker1.RunWorkerCompleted, AddressOf BackgroundWorker1_RunWorkerCompleted
+        RemoveHandler BackgroundWorker2.DoWork, AddressOf BackgroundWorker2_DoWork
+        RemoveHandler BackgroundWorker2.RunWorkerCompleted, AddressOf BackgroundWorker2_RunWorkerCompleted
+
         AddHandler BackgroundWorker1.DoWork, AddressOf BackgroundWorker1_DoWork
         AddHandler BackgroundWorker1.RunWorkerCompleted, AddressOf BackgroundWorker1_RunWorkerCompleted
+        AddHandler BackgroundWorker2.DoWork, AddressOf BackgroundWorker2_DoWork
+        AddHandler BackgroundWorker2.RunWorkerCompleted, AddressOf BackgroundWorker2_RunWorkerCompleted
     End Sub
 
     Private Sub BackgroundWorker1_DoWork(sender As Object, e As System.ComponentModel.DoWorkEventArgs)
@@ -234,6 +259,7 @@ Public Class Form1
 
     Private Sub BackgroundWorker1_RunWorkerCompleted(sender As Object, e As System.ComponentModel.RunWorkerCompletedEventArgs)
         Button1.Enabled = True
+        任务是否正在运行 = False
 
         If e.Error IsNot Nothing Then
             MessageBox.Show("合并过程中发生错误，请检查日志！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -354,7 +380,7 @@ Public Class Form1
     Private Sub Button5_Click(sender As Object, e As EventArgs) Handles Button5.Click
         Dim ofd As New OpenFileDialog()
         ofd.Multiselect = False
-        ofd.Filter = "压缩包文件 (*.zip) (*.7z)|*.zip;*.7z|Zip 文件 (*.zip)|*.zip|7Zip 文件 (*.7z)|*.7z|所有文件 (*.*)|*.*"
+        ofd.Filter = "压缩包文件 (*.zip;*.7z)|*.zip;*.7z|所有文件 (*.*)|*.*"
 
         If ofd.ShowDialog() = DialogResult.OK Then
             Dim fp As String = ofd.FileName
@@ -366,12 +392,290 @@ Public Class Form1
     Private Sub Button6_Click(sender As Object, e As EventArgs) Handles Button6.Click
         Dim ofd As New OpenFileDialog()
         ofd.Multiselect = False
-        ofd.Filter = "压缩包文件 (*.zip) (*.7z)|*.zip;*.7z|Zip 文件 (*.zip)|*.zip|7Zip 文件 (*.7z)|*.7z|所有文件 (*.*)|*.*"
+        ofd.Filter = "压缩包文件 (*.zip;*.7z)|*.zip;*.7z|所有文件 (*.*)|*.*"
 
         If ofd.ShowDialog() = DialogResult.OK Then
             Dim fp As String = ofd.FileName
             语音差分包是否压缩包 = True
             TextBox3.Text = fp
+        End If
+    End Sub
+
+    Private Sub 制作选择旧客户端按钮_Click(sender As Object, e As EventArgs) Handles 制作选择旧客户端按钮.Click
+        Dim fbd As New FolderBrowserDialog()
+        If fbd.ShowDialog() = DialogResult.OK Then
+            旧客户端路径框.Text = fbd.SelectedPath
+        End If
+    End Sub
+
+    Private Sub 制作选择新客户端_Click(sender As Object, e As EventArgs) Handles 制作选择新客户端.Click
+        Dim fbd As New FolderBrowserDialog()
+        If fbd.ShowDialog() = DialogResult.OK Then
+            新客户端路径框.Text = fbd.SelectedPath
+        End If
+    End Sub
+
+    Private Sub 制作选择差分包_Click(sender As Object, e As EventArgs) Handles 制作选择差分包.Click
+        Dim sfd As New SaveFileDialog()
+        sfd.Filter = "压缩包文件 (*.zip)|*.zip|所有文件 (*.*)|*.*"
+        sfd.FilterIndex = 0
+        sfd.RestoreDirectory = True
+        sfd.OverwritePrompt = True
+
+        If sfd.ShowDialog() = DialogResult.OK Then
+            Dim fp As String = sfd.FileName
+            差分包保存路径框.Text = fp
+        End If
+    End Sub
+
+    Private Sub 制作按钮_Click(sender As Object, e As EventArgs) Handles 制作按钮.Click
+        If 任务是否正在运行 Then
+            MessageBox.Show("当前已有任务正在运行，请等待完成后再试。", "警告：", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
+        End If
+
+        If String.IsNullOrWhiteSpace(旧客户端路径框.Text) Then
+            MessageBox.Show("请选择旧客户端目录", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End If
+
+        If String.IsNullOrWhiteSpace(新客户端路径框.Text) Then
+            MessageBox.Show("请选择新客户端目录", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End If
+
+        If String.IsNullOrWhiteSpace(差分包保存路径框.Text) Then
+            MessageBox.Show("请选择差分包保存位置", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End If
+
+        If Not Directory.Exists(旧客户端路径框.Text) Then
+            MessageBox.Show("旧客户端目录不存在", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End If
+
+        If Not Directory.Exists(新客户端路径框.Text) Then
+            MessageBox.Show("新客户端目录不存在", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End If
+
+        hdiffzExe = Path.Combine(Application.StartupPath, "hdiffz.exe")
+        If Not File.Exists(hdiffzExe) Then
+            MessageBox.Show("hdiffz.exe 文件不存在于程序路径下！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End If
+
+        Dim result As DialogResult = MessageBox.Show("请确认你所填的路径是否正确：" & vbCrLf & vbCrLf & "旧客户端路径：" & 旧客户端路径框.Text & vbCrLf & "新客户端路径：" & 新客户端路径框.Text & vbCrLf & "差分包保存路径：" & 差分包保存路径框.Text & vbCrLf & vbCrLf & "填写不正确的路径会导致制作失败！", "警告：", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning)
+        If result = DialogResult.Cancel Then Return
+
+        设置UI状态(False)
+
+        任务是否正在运行 = True
+        BackgroundWorker2.RunWorkerAsync()
+    End Sub
+
+    Private Sub 设置UI状态(是否启用 As Boolean)
+        制作选择旧客户端按钮.Enabled = 是否启用
+        制作选择新客户端.Enabled = 是否启用
+        制作选择差分包.Enabled = 是否启用
+        制作按钮.Enabled = 是否启用
+    End Sub
+
+    Private Sub BackgroundWorker2_DoWork(sender As Object, e As DoWorkEventArgs)
+        Dim 输出目录 As String = Path.GetDirectoryName(差分包保存路径框.Text)
+        Dim 压缩包名称 As String = Path.GetFileName(差分包保存路径框.Text)
+        Dim 临时目录 As String = Path.Combine(输出目录, Path.GetFileNameWithoutExtension(差分包保存路径框.Text))
+
+        Try
+            写入日志框($"旧版本目录: {旧客户端路径框.Text}")
+            写入日志框($"新版本目录: {新客户端路径框.Text}")
+            写入日志框($"输出压缩包: {差分包保存路径框.Text}")
+
+            写入日志框($"创建临时目录: {临时目录}")
+            If Directory.Exists(临时目录) Then
+                Directory.Delete(临时目录, True)
+            End If
+
+            Directory.CreateDirectory(临时目录)
+
+            Dim 旧文件集合 As HashSet(Of String) = 获取文件列表(旧客户端路径框.Text)
+            Dim 新文件集合 As HashSet(Of String) = 获取文件列表(新客户端路径框.Text)
+
+            生成删除文件列表(旧文件集合, 新文件集合, 临时目录)
+            生成补丁文件(旧客户端路径框.Text, 新客户端路径框.Text, 临时目录, 旧文件集合, 新文件集合)
+            添加新增文件(新客户端路径框.Text, 临时目录, 旧文件集合, 新文件集合)
+            创建压缩包(临时目录, 差分包保存路径框.Text)
+
+            Directory.Delete(临时目录, True)
+
+            e.Result = Nothing
+        Catch ex As Exception
+            e.Result = ex
+        End Try
+    End Sub
+
+    Private Function 获取文件列表(目录路径 As String) As HashSet(Of String)
+        Dim 文件列表 As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        Dim 文件数量 As Integer = 0
+
+        For Each 文件路径 In Directory.GetFiles(目录路径, "*", SearchOption.AllDirectories)
+            Dim 相对路径 As String = 获取相对路径(目录路径, 文件路径).Replace("\", "/")
+            文件列表.Add(相对路径)
+            文件数量 += 1
+        Next
+
+        Return 文件列表
+    End Function
+
+    Private Function 获取相对路径(基础路径 As String, 完整路径 As String) As String
+        If Not 基础路径.EndsWith(Path.DirectorySeparatorChar) Then
+            基础路径 &= Path.DirectorySeparatorChar
+        End If
+
+        Dim 基础Uri As New Uri(基础路径)
+        Dim 完整Uri As New Uri(完整路径)
+        Dim 相对Uri As Uri = 基础Uri.MakeRelativeUri(完整Uri)
+        Return Uri.UnescapeDataString(相对Uri.ToString()).Replace("/", Path.DirectorySeparatorChar)
+    End Function
+
+    Private Sub 生成删除文件列表(旧文件集合 As HashSet(Of String), 新文件集合 As HashSet(Of String), 输出目录 As String)
+        Dim 已删除文件集合 As New HashSet(Of String)(旧文件集合)
+        已删除文件集合.ExceptWith(新文件集合)
+
+        Dim 删除文件路径 As String = Path.Combine(输出目录, "deletefiles.txt")
+        If File.Exists(删除文件路径) Then File.Delete(删除文件路径)
+
+        Using 写入器 As New StreamWriter(删除文件路径)
+            For Each 文件路径 In 已删除文件集合
+                写入器.WriteLine(文件路径)
+                写入日志框($"待删除文件：{文件路径}")
+            Next
+        End Using
+    End Sub
+
+    Private Sub 生成补丁文件(旧目录 As String, 新目录 As String, 输出目录 As String, 旧文件集合 As HashSet(Of String), 新文件集合 As HashSet(Of String))
+        Dim 共有文件集合 As New HashSet(Of String)(旧文件集合)
+        共有文件集合.IntersectWith(新文件集合)
+        Dim 补丁条目列表 As New List(Of Dictionary(Of String, String))
+        Dim 补丁数量 As Integer = 0
+        Dim 跳过数量 As Integer = 0
+
+        For Each 文件相对路径 In 共有文件集合
+            Dim 文件名 As String = Path.GetFileName(文件相对路径)
+            If 文件名 = "hdifffiles.txt" OrElse 文件名 = "deletefiles.txt" Then
+                写入日志框($"跳过差分包生成文件：{文件相对路径}")
+                Continue For
+            End If
+
+            Dim 旧文件路径 As String = Path.Combine(旧目录, 文件相对路径)
+            Dim 新文件路径 As String = Path.Combine(新目录, 文件相对路径)
+
+            If 文件是否相同(旧文件路径, 新文件路径) Then
+                写入日志框($"跳过相同文件：{文件相对路径}")
+                跳过数量 += 1
+                Continue For
+            End If
+
+            Dim 补丁文件路径 As String = Path.Combine(输出目录, 文件相对路径 & ".hdiff")
+            Directory.CreateDirectory(Path.GetDirectoryName(补丁文件路径))
+
+            写入日志框($"生成差分文件：{补丁文件路径}")
+            Dim cmd As String = $"""{hdiffzExe}"" ""{旧文件路径}"" ""{新文件路径}"" ""{补丁文件路径}"""
+            执行CMD(cmd)
+
+            补丁条目列表.Add(New Dictionary(Of String, String) From {{"remoteName", 文件相对路径}})
+            补丁数量 += 1
+        Next
+
+        Dim 补丁列表路径 As String = Path.Combine(输出目录, "hdifffiles.txt")
+
+        If File.Exists(补丁列表路径) Then File.Delete(补丁列表路径)
+        Using 写入器 As New StreamWriter(补丁列表路径)
+            For Each 条目 In 补丁条目列表
+                写入器.WriteLine(JsonSerializer.Serialize(条目, New JsonSerializerOptions With {.WriteIndented = False}))
+            Next
+        End Using
+    End Sub
+
+    Private Function 文件是否相同(文件路径1 As String, 文件路径2 As String) As Boolean
+        Dim 文件信息1 As New FileInfo(文件路径1)
+        Dim 文件信息2 As New FileInfo(文件路径2)
+
+        If 文件信息1.Length <> 文件信息2.Length Then Return False
+
+        Using MD5计算器 As MD5 = MD5.Create()
+            Dim md5文件1 As String
+            Using 文件流 As FileStream = File.OpenRead(文件路径1)
+                md5文件1 = BitConverter.ToString(MD5计算器.ComputeHash(文件流)).Replace("-", "").ToLowerInvariant()
+            End Using
+
+            MD5计算器.Initialize()
+
+            Dim md5文件2 As String
+            Using 文件流 As FileStream = File.OpenRead(文件路径2)
+                md5文件2 = BitConverter.ToString(MD5计算器.ComputeHash(文件流)).Replace("-", "").ToLowerInvariant()
+            End Using
+
+            Return md5文件1 = md5文件2
+        End Using
+    End Function
+
+    Private Sub 添加新增文件(新目录 As String, 输出目录 As String, 旧文件集合 As HashSet(Of String), 新文件集合 As HashSet(Of String))
+        Dim 新增文件集合 As New HashSet(Of String)(新文件集合)
+        新增文件集合.ExceptWith(旧文件集合)
+        Dim 新增数量 As Integer = 0
+
+        For Each 文件相对路径 In 新增文件集合
+            Dim 文件名 As String = Path.GetFileName(文件相对路径)
+            If 文件名 = "hdifffiles.txt" OrElse 文件名 = "deletefiles.txt" Then
+                写入日志框($"跳过差分包生成文件：{文件相对路径}")
+                Continue For
+            End If
+
+            Dim 源文件路径 As String = Path.Combine(新目录, 文件相对路径)
+            Dim 目标文件路径 As String = Path.Combine(输出目录, 文件相对路径)
+
+            Directory.CreateDirectory(Path.GetDirectoryName(目标文件路径))
+            File.Copy(源文件路径, 目标文件路径, True)
+
+            写入日志框($"新文件：{目标文件路径}")
+            新增数量 += 1
+        Next
+    End Sub
+
+    Private Sub 创建压缩包(输出目录 As String, 压缩包路径 As String)
+        If File.Exists(压缩包路径) Then
+            写入日志框("删除已存在的旧压缩包：" + 压缩包路径)
+            File.Delete(压缩包路径)
+        End If
+
+        写入日志框($"正在创建压缩包: {压缩包路径}...")
+        Using 文件流 As FileStream = File.OpenWrite(压缩包路径)
+            Using 压缩写入器 As IWriter = WriterFactory.Open(文件流, ArchiveType.Zip, New ZipWriterOptions(CompressionType.Deflate))
+                For Each 文件路径 In Directory.GetFiles(输出目录, "*", SearchOption.AllDirectories)
+                    Dim 相对路径 As String = 文件路径.Substring(输出目录.Length).TrimStart(Path.DirectorySeparatorChar)
+                    相对路径 = 相对路径.Replace(Path.DirectorySeparatorChar, "/")
+                    压缩写入器.Write(相对路径, 文件路径)
+                Next
+            End Using
+        End Using
+
+        写入日志框($"差分包已生成: {压缩包路径}")
+    End Sub
+
+    Private Sub BackgroundWorker2_RunWorkerCompleted(sender As Object, e As RunWorkerCompletedEventArgs)
+        设置UI状态(True)
+        任务是否正在运行 = False
+
+        If e.Error IsNot Nothing Then
+            MessageBox.Show($"制作失败: {e.Error.Message}", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            写入日志框(e.Error.ToString())
+        ElseIf TypeOf e.Result Is Exception Then
+            Dim ex As Exception = DirectCast(e.Result, Exception)
+            MessageBox.Show($"制作失败: {ex.Message}", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            写入日志框(ex.ToString())
+        Else
+            MessageBox.Show("差分包制作成功!", "信息：", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End If
     End Sub
 End Class
