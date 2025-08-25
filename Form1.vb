@@ -15,6 +15,8 @@ Imports SharpCompress.Compressors.BZip2
 Public Class Form1
     Delegate Sub 写入日志框委托(text As String)
     Delegate Sub 清空日志框委托()
+    Delegate Sub 合并设置UI状态委托(是否启用 As Boolean)
+    Delegate Sub 显示消息框委托(text As String, caption As String, buttons As MessageBoxButtons, icon As MessageBoxIcon)
 
     Private 客户端路径 As String
     Private 差分包路径 As String
@@ -34,6 +36,7 @@ Public Class Form1
     Private hdiffzExe As String
 
     Private 任务是否正在运行 As Boolean = False
+    Private 检查任务是否正在运行 As Boolean = False
 
     Public Sub 写入日志框(text As String)
         If TextBox4.InvokeRequired Then
@@ -49,6 +52,28 @@ Public Class Form1
             TextBox4.Invoke(New 清空日志框委托(AddressOf 清空日志框))
         Else
             TextBox4.Clear()
+        End If
+    End Sub
+
+    Private Sub 合并设置UI状态(是否启用 As Boolean)
+        If Me.InvokeRequired Then
+            Me.Invoke(New 合并设置UI状态委托(AddressOf 设置UI状态), 是否启用)
+        Else
+            Button1.Enabled = 是否启用
+            Button4.Enabled = 是否启用 AndAlso CheckBox1.Checked
+            Button6.Enabled = 是否启用 AndAlso CheckBox1.Checked
+            CheckBox1.Enabled = 是否启用
+            Button2.Enabled = 是否启用
+            Button3.Enabled = 是否启用
+            Button5.Enabled = 是否启用
+        End If
+    End Sub
+
+    Private Sub 显示消息框(text As String, caption As String, buttons As MessageBoxButtons, icon As MessageBoxIcon)
+        If Me.InvokeRequired Then
+            Me.Invoke(New 显示消息框委托(AddressOf 显示消息框), text, caption, buttons, icon)
+        Else
+            MessageBox.Show(text, caption, buttons, icon)
         End If
     End Sub
 
@@ -191,8 +216,8 @@ Public Class Form1
         End Try
     End Sub
 
-    Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
-        If 任务是否正在运行 Then
+    Private Async Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
+        If 任务是否正在运行 OrElse 检查任务是否正在运行 Then
             MessageBox.Show("当前已有任务正在运行，请等待完成后再试。", "警告：", MessageBoxButtons.OK, MessageBoxIcon.Warning)
             Return
         End If
@@ -212,60 +237,6 @@ Public Class Form1
             Return
         End If
 
-        If Not 差分包是否压缩包 Then
-            If Not File.Exists(Path.Combine(差分包路径, "deletefiles.txt")) Then
-                MessageBox.Show("差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                Return
-            ElseIf File.Exists(Path.Combine(差分包路径, "hdifffiles.txt")) Then
-                V2差分包 = False
-            ElseIf File.Exists(Path.Combine(差分包路径, "hdiffmap.json")) Then
-                V2差分包 = True
-            Else
-                MessageBox.Show("差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                Return
-            End If
-        Else
-            If Not 检查压缩包中的文件(差分包路径, "deletefiles.txt") Then
-                MessageBox.Show("差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                Return
-            ElseIf 检查压缩包中的文件(差分包路径, "hdifffiles.txt") Then
-                V2差分包 = False
-            ElseIf 检查压缩包中的文件(差分包路径, "hdiffmap.json") Then
-                V2差分包 = True
-            Else
-                MessageBox.Show("差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                Return
-            End If
-        End If
-
-        If CheckBox1.Checked Then
-            If Not 语音差分包是否压缩包 Then
-                If Not File.Exists(Path.Combine(语音差分包路径, "deletefiles.txt")) Then
-                    MessageBox.Show("语音差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                    Return
-                ElseIf File.Exists(Path.Combine(语音差分包路径, "hdifffiles.txt")) Then
-                    V2语音差分包 = False
-                ElseIf File.Exists(Path.Combine(语音差分包路径, "hdiffmap.json")) Then
-                    V2语音差分包 = True
-                Else
-                    MessageBox.Show("语音差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                    Return
-                End If
-            Else
-                If Not 检查压缩包中的文件(语音差分包路径, "deletefiles.txt") Then
-                    MessageBox.Show("语音差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                    Return
-                ElseIf 检查压缩包中的文件(语音差分包路径, "hdifffiles.txt") Then
-                    V2语音差分包 = False
-                ElseIf 检查压缩包中的文件(语音差分包路径, "hdiffmap.json") Then
-                    V2语音差分包 = True
-                Else
-                    MessageBox.Show("语音差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                    Return
-                End If
-            End If
-        End If
-
         If CheckBox1.Checked Then
             Dim result As DialogResult = MessageBox.Show("请确认你所填的路径是否正确：" & vbCrLf & vbCrLf & "客户端路径：" & 客户端路径 & vbCrLf & "游戏差分包路径：" & 差分包路径 & vbCrLf & "语音差分包路径：" & 语音差分包路径 & vbCrLf & vbCrLf & "填写不正确的路径会导致合并失败，合并失败只能重新解压重来！", "警告：", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning)
             If result = DialogResult.Cancel Then Return
@@ -275,11 +246,90 @@ Public Class Form1
         End If
 
         Button1.Enabled = False
+        检查任务是否正在运行 = True
         清空日志框()
+        合并设置UI状态(False)
+
+        Dim 检查结果 As Boolean = Await Task.Run(Function() 检查差分包())
+
+        If Not 检查结果 Then
+            检查任务是否正在运行 = False
+            合并设置UI状态(True)
+            Return
+        End If
 
         任务是否正在运行 = True
+        检查任务是否正在运行 = False
         BackgroundWorker1.RunWorkerAsync()
     End Sub
+
+    Private Function 检查差分包() As Boolean
+        Try
+            写入日志框("正在检查差分包，请稍候...")
+            If Not 差分包是否压缩包 Then
+                If Not File.Exists(Path.Combine(差分包路径, "deletefiles.txt")) Then
+                    显示消息框("差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Return False
+                ElseIf File.Exists(Path.Combine(差分包路径, "hdifffiles.txt")) Then
+                    V2差分包 = False
+                ElseIf File.Exists(Path.Combine(差分包路径, "hdiffmap.json")) Then
+                    V2差分包 = True
+                Else
+                    显示消息框("差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Return False
+                End If
+            Else
+                If Not 检查压缩包中的文件(差分包路径, "deletefiles.txt") Then
+                    显示消息框("差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Return False
+                ElseIf 检查压缩包中的文件(差分包路径, "hdifffiles.txt") Then
+                    V2差分包 = False
+                ElseIf 检查压缩包中的文件(差分包路径, "hdiffmap.json") Then
+                    V2差分包 = True
+                Else
+                    显示消息框("差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Return False
+                End If
+            End If
+
+            If CheckBox1.Checked Then
+                写入日志框("正在检查语音差分包，请稍候...")
+
+                If Not 语音差分包是否压缩包 Then
+                    If Not File.Exists(Path.Combine(语音差分包路径, "deletefiles.txt")) Then
+                        显示消息框("语音差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                        Return False
+                    ElseIf File.Exists(Path.Combine(语音差分包路径, "hdifffiles.txt")) Then
+                        V2语音差分包 = False
+                    ElseIf File.Exists(Path.Combine(语音差分包路径, "hdiffmap.json")) Then
+                        V2语音差分包 = True
+                    Else
+                        显示消息框("语音差分包文件不存在！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                        Return False
+                    End If
+                Else
+                    If Not 检查压缩包中的文件(语音差分包路径, "deletefiles.txt") Then
+                        显示消息框("语音差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                        Return False
+                    ElseIf 检查压缩包中的文件(语音差分包路径, "hdifffiles.txt") Then
+                        V2语音差分包 = False
+                    ElseIf 检查压缩包中的文件(语音差分包路径, "hdiffmap.json") Then
+                        V2语音差分包 = True
+                    Else
+                        显示消息框("语音差分包文件不存在或不正确！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                        Return False
+                    End If
+                End If
+            End If
+
+            写入日志框("差分包检查完成，开始合并")
+            Return True
+        Catch ex As Exception
+            写入日志框("检查差分包时发生错误: " & ex.Message)
+            显示消息框("检查差分包时发生错误: " & ex.Message, "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return False
+        End Try
+    End Function
 
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
         If Not CheckBox1.Checked Then
@@ -307,9 +357,9 @@ Public Class Form1
                 Dim 压缩文件目录 As String = Path.GetDirectoryName(差分包路径)
                 Dim 压缩文件名 As String = Path.GetFileNameWithoutExtension(差分包路径)
                 Dim 压缩文件路径 As String = 差分包路径
-                差分包路径 = 压缩文件目录 & “\” & 压缩文件名
+                差分包路径 = 压缩文件目录 & "\" & 压缩文件名
                 If Directory.Exists(差分包路径) Then Directory.Delete(差分包路径, True)
-                写入日志框("解压：" & 压缩文件路径)
+                写入日志框("解压：" & 压缩文件路径 & "...")
                 解压压缩包(压缩文件路径, 差分包路径)
             End If
 
@@ -317,9 +367,9 @@ Public Class Form1
                 Dim 压缩文件目录 As String = Path.GetDirectoryName(语音差分包路径)
                 Dim 压缩文件名 As String = Path.GetFileNameWithoutExtension(语音差分包路径)
                 Dim 压缩文件路径 As String = 语音差分包路径
-                语音差分包路径 = 压缩文件目录 & “\” & 压缩文件名
+                语音差分包路径 = 压缩文件目录 & "\" & 压缩文件名
                 If Directory.Exists(语音差分包路径) Then Directory.Delete(语音差分包路径, True)
-                写入日志框("解压：" & 压缩文件路径)
+                写入日志框("解压：" & 压缩文件路径 & "...")
                 解压压缩包(压缩文件路径, 语音差分包路径)
             End If
 
@@ -351,7 +401,7 @@ Public Class Form1
     End Sub
 
     Private Sub BackgroundWorker1_RunWorkerCompleted(sender As Object, e As System.ComponentModel.RunWorkerCompletedEventArgs)
-        Button1.Enabled = True
+        合并设置UI状态(True)
         任务是否正在运行 = False
 
         If e.Error IsNot Nothing Then
