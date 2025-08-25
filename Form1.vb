@@ -7,6 +7,10 @@ Imports SharpCompress.Writers.Zip
 Imports System.ComponentModel
 Imports System.Text.Json.Nodes
 Imports SharpCompress.Archives
+Imports SharpCompress.Compressors.LZMA
+Imports SharpCompress.Writers.Tar
+Imports SharpCompress.Readers
+Imports SharpCompress.Compressors.BZip2
 
 Public Class Form1
     Delegate Sub 写入日志框委托(text As String)
@@ -79,13 +83,49 @@ Public Class Form1
 
     Public Function 检查压缩包中的文件(zipFilePath As String, fileName As String) As Boolean
         Try
-            Using archive As IArchive = ArchiveFactory.Open(zipFilePath)
-                For Each entry In archive.Entries
-                    If entry.Key.Equals(fileName, StringComparison.OrdinalIgnoreCase) Then
-                        Return True
-                    End If
-                Next
-            End Using
+            Dim 扩展名 As String = Path.GetExtension(zipFilePath).ToLowerInvariant()
+            If 扩展名 = ".lz" OrElse zipFilePath.EndsWith(".tar.lz", StringComparison.OrdinalIgnoreCase) Then
+                Using 文件流 As FileStream = File.OpenRead(zipFilePath)
+                    Using lz流 As New LZipStream(文件流, SharpCompress.Compressors.CompressionMode.Decompress)
+                        Using tarReader As IReader = ReaderFactory.Open(lz流)
+                            While tarReader.MoveToNextEntry()
+                                If Not tarReader.Entry.IsDirectory Then
+                                    Dim entryName As String = tarReader.Entry.Key.Replace("/", Path.DirectorySeparatorChar)
+                                    If entryName.Equals(fileName, StringComparison.OrdinalIgnoreCase) Then
+                                        Return True
+                                    End If
+                                End If
+                            End While
+                        End Using
+                    End Using
+                End Using
+            ElseIf 扩展名 = ".bz2" OrElse zipFilePath.EndsWith(".tar.bz2", StringComparison.OrdinalIgnoreCase) Then
+                Using 文件流 As FileStream = File.OpenRead(zipFilePath)
+                    Using bz2流 As New BZip2Stream(文件流, SharpCompress.Compressors.CompressionMode.Decompress, False)
+                        Using tarReader As IReader = ReaderFactory.Open(bz2流)
+                            While tarReader.MoveToNextEntry()
+                                If Not tarReader.Entry.IsDirectory Then
+                                    Dim entryName As String = tarReader.Entry.Key.Replace("/", Path.DirectorySeparatorChar)
+                                    If entryName.Equals(fileName, StringComparison.OrdinalIgnoreCase) Then
+                                        Return True
+                                    End If
+                                End If
+                            End While
+                        End Using
+                    End Using
+                End Using
+            Else
+                Using archive As IArchive = ArchiveFactory.Open(zipFilePath)
+                    For Each entry In archive.Entries
+                        If Not entry.IsDirectory Then
+                            Dim entryName As String = entry.Key.Replace("/", Path.DirectorySeparatorChar)
+                            If entryName.Equals(fileName, StringComparison.OrdinalIgnoreCase) Then
+                                Return True
+                            End If
+                        End If
+                    Next
+                End Using
+            End If
         Catch ex As Exception
             写入日志框("读取压缩包时出错：" & ex.Message)
         End Try
@@ -93,9 +133,62 @@ Public Class Form1
     End Function
 
     Public Sub 解压压缩包(zipFilePath As String, extractTo As String)
-        Dim 压缩包 As IArchive = ArchiveFactory.Open(zipFilePath)
-        压缩包.ExtractToDirectory(extractTo)
-        压缩包.Dispose()
+        Try
+            Dim 扩展名 As String = Path.GetExtension(zipFilePath).ToLowerInvariant()
+            If 扩展名 = ".lz" OrElse zipFilePath.EndsWith(".tar.lz", StringComparison.OrdinalIgnoreCase) Then
+                Using 文件流 As FileStream = File.OpenRead(zipFilePath)
+                    Using lz流 As New LZipStream(文件流, SharpCompress.Compressors.CompressionMode.Decompress)
+                        Using tar读取器 As IReader = ReaderFactory.Open(lz流)
+                            While tar读取器.MoveToNextEntry()
+                                If Not tar读取器.Entry.IsDirectory Then
+                                    Dim 目标路径 As String = Path.Combine(extractTo, tar读取器.Entry.Key.Replace("/", Path.DirectorySeparatorChar))
+                                    Dim 目标目录 As String = Path.GetDirectoryName(目标路径)
+
+                                    If Not Directory.Exists(目标目录) Then
+                                        Directory.CreateDirectory(目标目录)
+                                    End If
+
+                                    tar读取器.WriteEntryTo(目标路径)
+                                End If
+                            End While
+                        End Using
+                    End Using
+                End Using
+            ElseIf 扩展名 = ".bz2" OrElse zipFilePath.EndsWith(".tar.bz2", StringComparison.OrdinalIgnoreCase) Then
+                Using 文件流 As FileStream = File.OpenRead(zipFilePath)
+                    Using bz2流 As New BZip2Stream(文件流, SharpCompress.Compressors.CompressionMode.Decompress, False)
+                        Using tar读取器 As IReader = ReaderFactory.Open(bz2流)
+                            While tar读取器.MoveToNextEntry()
+                                If Not tar读取器.Entry.IsDirectory Then
+                                    Dim 目标路径 As String = Path.Combine(extractTo, tar读取器.Entry.Key.Replace("/", Path.DirectorySeparatorChar))
+                                    Dim 目标目录 As String = Path.GetDirectoryName(目标路径)
+
+                                    If Not Directory.Exists(目标目录) Then
+                                        Directory.CreateDirectory(目标目录)
+                                    End If
+
+                                    tar读取器.WriteEntryTo(目标路径)
+                                End If
+                            End While
+                        End Using
+                    End Using
+                End Using
+            Else
+                Using archive As IArchive = ArchiveFactory.Open(zipFilePath)
+                    For Each entry In archive.Entries
+                        If Not entry.IsDirectory Then
+                            entry.WriteToDirectory(extractTo, New ExtractionOptions With {
+                                .ExtractFullPath = True,
+                                .Overwrite = True
+                            })
+                        End If
+                    Next
+                End Using
+            End If
+        Catch ex As Exception
+            写入日志框("解压压缩包时出错：" & ex.Message)
+            Throw
+        End Try
     End Sub
 
     Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
@@ -331,7 +424,7 @@ Public Class Form1
             If Not Directory.Exists(目的文件夹) Then
                 Directory.CreateDirectory(目的文件夹)
             End If
-            写入日志框($"移动：{源文件} -> {目标文件}...")
+            写入日志框($"移动：{源文件} -> {目标文件}")
             If File.Exists(目标文件) Then File.Delete(目标文件)
             File.Move(源文件, 目标文件)
         Next
@@ -380,7 +473,7 @@ Public Class Form1
     Private Sub Button5_Click(sender As Object, e As EventArgs) Handles Button5.Click
         Dim ofd As New OpenFileDialog()
         ofd.Multiselect = False
-        ofd.Filter = "压缩包文件 (*.zip;*.7z)|*.zip;*.7z|所有文件 (*.*)|*.*"
+        ofd.Filter = "压缩包文件 (*.zip;*.7z;*.tar.lz;*.tar.bz2)|*.zip;*.7z;*.tar.lz;*.tar.bz2|所有文件 (*.*)|*.*"
 
         If ofd.ShowDialog() = DialogResult.OK Then
             Dim fp As String = ofd.FileName
@@ -392,7 +485,7 @@ Public Class Form1
     Private Sub Button6_Click(sender As Object, e As EventArgs) Handles Button6.Click
         Dim ofd As New OpenFileDialog()
         ofd.Multiselect = False
-        ofd.Filter = "压缩包文件 (*.zip;*.7z)|*.zip;*.7z|所有文件 (*.*)|*.*"
+        ofd.Filter = "压缩包文件 (*.zip;*.7z;*.tar.lz;*.tar.bz2)|*.zip;*.7z;*.tar.lz;*.tar.bz2|所有文件 (*.*)|*.*"
 
         If ofd.ShowDialog() = DialogResult.OK Then
             Dim fp As String = ofd.FileName
@@ -417,13 +510,24 @@ Public Class Form1
 
     Private Sub 制作选择差分包_Click(sender As Object, e As EventArgs) Handles 制作选择差分包.Click
         Dim sfd As New SaveFileDialog()
-        sfd.Filter = "压缩包文件 (*.zip)|*.zip|所有文件 (*.*)|*.*"
+        sfd.Filter = "zip 文件 (*.zip)|*.zip|tar.lz 文件 (*.tar.lz)|*.tar.lz|tar.bz2 文件 (*.tar.bz2)|*.tar.bz2|所有文件 (*.*)|*.*"
         sfd.FilterIndex = 0
         sfd.RestoreDirectory = True
         sfd.OverwritePrompt = True
+        sfd.AddExtension = False
 
         If sfd.ShowDialog() = DialogResult.OK Then
             Dim fp As String = sfd.FileName
+            Dim 后缀 As String() = {"", ".zip", ".tar.lz", ".tar.bz2", ""}
+            Dim 预计后缀 As String = 后缀(sfd.FilterIndex)
+            If 预计后缀 <> "" Then
+                While fp.EndsWith(预计后缀 & 预计后缀, StringComparison.OrdinalIgnoreCase)
+                    fp = fp.Substring(0, fp.Length - 预计后缀.Length)
+                End While
+                If Not fp.EndsWith(预计后缀, StringComparison.OrdinalIgnoreCase) Then
+                    fp &= 预计后缀
+                End If
+            End If
             差分包保存路径框.Text = fp
         End If
     End Sub
@@ -471,6 +575,7 @@ Public Class Form1
         设置UI状态(False)
 
         任务是否正在运行 = True
+        清空日志框()
         BackgroundWorker2.RunWorkerAsync()
     End Sub
 
@@ -650,15 +755,46 @@ Public Class Form1
         End If
 
         写入日志框($"正在创建压缩包: {压缩包路径}...")
-        Using 文件流 As FileStream = File.OpenWrite(压缩包路径)
-            Using 压缩写入器 As IWriter = WriterFactory.Open(文件流, ArchiveType.Zip, New ZipWriterOptions(CompressionType.Deflate))
-                For Each 文件路径 In Directory.GetFiles(输出目录, "*", SearchOption.AllDirectories)
-                    Dim 相对路径 As String = 文件路径.Substring(输出目录.Length).TrimStart(Path.DirectorySeparatorChar)
-                    相对路径 = 相对路径.Replace(Path.DirectorySeparatorChar, "/")
-                    压缩写入器.Write(相对路径, 文件路径)
-                Next
+
+        Dim 扩展名 As String = Path.GetExtension(压缩包路径).ToLowerInvariant()
+
+        If 扩展名 = ".zip" Then
+            Using 文件流 As FileStream = File.OpenWrite(压缩包路径)
+                Using 压缩写入器 As IWriter = WriterFactory.Open(文件流, ArchiveType.Zip, New ZipWriterOptions(CompressionType.Deflate))
+                    For Each 文件路径 In Directory.GetFiles(输出目录, "*", SearchOption.AllDirectories)
+                        Dim 相对路径 As String = 文件路径.Substring(输出目录.Length).TrimStart(Path.DirectorySeparatorChar)
+                        相对路径 = 相对路径.Replace(Path.DirectorySeparatorChar, "/")
+                        压缩写入器.Write(相对路径, 文件路径)
+                    Next
+                End Using
             End Using
-        End Using
+        ElseIf 扩展名 = ".lz" OrElse 压缩包路径.EndsWith(".tar.lz", StringComparison.OrdinalIgnoreCase) Then
+            Using 文件流 As FileStream = File.OpenWrite(压缩包路径)
+                Using lz流 As New LZipStream(文件流, SharpCompress.Compressors.CompressionMode.Compress)
+                    Using tar写入器 As IWriter = WriterFactory.Open(lz流, ArchiveType.Tar, New TarWriterOptions(CompressionType.None, True))
+                        For Each 文件路径 In Directory.GetFiles(输出目录, "*", SearchOption.AllDirectories)
+                            Dim 相对路径 As String = 文件路径.Substring(输出目录.Length).TrimStart(Path.DirectorySeparatorChar)
+                            相对路径 = 相对路径.Replace(Path.DirectorySeparatorChar, "/")
+                            tar写入器.Write(相对路径, 文件路径)
+                        Next
+                    End Using
+                End Using
+            End Using
+        ElseIf 扩展名 = ".bz2" OrElse 压缩包路径.EndsWith(".tar.bz2", StringComparison.OrdinalIgnoreCase) Then
+            Using 文件流 As FileStream = File.OpenWrite(压缩包路径)
+                Using bz2流 As New BZip2Stream(文件流, SharpCompress.Compressors.CompressionMode.Compress, False)
+                    Using tar写入器 As IWriter = WriterFactory.Open(bz2流, ArchiveType.Tar, New TarWriterOptions(CompressionType.None, True))
+                        For Each 文件路径 In Directory.GetFiles(输出目录, "*", SearchOption.AllDirectories)
+                            Dim 相对路径 As String = 文件路径.Substring(输出目录.Length).TrimStart(Path.DirectorySeparatorChar)
+                            相对路径 = 相对路径.Replace(Path.DirectorySeparatorChar, "/")
+                            tar写入器.Write(相对路径, 文件路径)
+                        Next
+                    End Using
+                End Using
+            End Using
+        Else
+            Throw New NotSupportedException($"不支持的压缩格式: {扩展名}")
+        End If
 
         写入日志框($"差分包已生成: {压缩包路径}")
     End Sub
