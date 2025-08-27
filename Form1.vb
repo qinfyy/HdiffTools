@@ -38,6 +38,8 @@ Public Class Form1
     Private 任务是否正在运行 As Boolean = False
     Private 检查任务是否正在运行 As Boolean = False
 
+    Private 压缩包密码字典 As New Dictionary(Of String, String)
+
     Public Sub 写入日志框(text As String)
         If TextBox4.InvokeRequired Then
             TextBox4.Invoke(New 写入日志框委托(AddressOf 写入日志框), text)
@@ -107,8 +109,13 @@ Public Class Form1
     End Sub
 
     Public Function 检查压缩包中的文件(zipFilePath As String, fileName As String) As Boolean
+        Dim 扩展名 As String = Path.GetExtension(zipFilePath).ToLowerInvariant()
+        Dim 密码 As String = Nothing
+        If 压缩包密码字典.ContainsKey(zipFilePath) Then
+            密码 = 压缩包密码字典(zipFilePath)
+        End If
+
         Try
-            Dim 扩展名 As String = Path.GetExtension(zipFilePath).ToLowerInvariant()
             If 扩展名 = ".lz" OrElse zipFilePath.EndsWith(".tar.lz", StringComparison.OrdinalIgnoreCase) Then
                 Using 文件流 As FileStream = File.OpenRead(zipFilePath)
                     Using lz流 As New LZipStream(文件流, SharpCompress.Compressors.CompressionMode.Decompress)
@@ -139,27 +146,58 @@ Public Class Form1
                         End Using
                     End Using
                 End Using
-            Else
-                Using archive As IArchive = ArchiveFactory.Open(zipFilePath)
-                    For Each entry In archive.Entries
-                        If Not entry.IsDirectory Then
-                            Dim entryName As String = entry.Key.Replace("/", Path.DirectorySeparatorChar)
-                            If entryName.Equals(fileName, StringComparison.OrdinalIgnoreCase) Then
-                                Return True
+            ElseIf 扩展名 = ".zip" OrElse 扩展名 = ".7z" OrElse 扩展名 = ".rar" Then
+重试标签:
+                Dim 选项 As New ReaderOptions()
+                If Not String.IsNullOrEmpty(密码) Then
+                    选项.Password = 密码
+                End If
+
+                Try
+                    Using archive As IArchive = ArchiveFactory.Open(zipFilePath, 选项)
+                        For Each entry In archive.Entries
+                            If Not entry.IsDirectory Then
+                                Dim entryName As String = entry.Key.Replace("/", Path.DirectorySeparatorChar)
+                                If entryName.Equals(fileName, StringComparison.OrdinalIgnoreCase) Then
+                                    If Not String.IsNullOrEmpty(选项.Password) Then
+                                        压缩包密码字典(zipFilePath) = 选项.Password
+                                    End If
+                                    Return True
+                                End If
                             End If
+                        Next
+                    End Using
+                Catch ex As Exception
+                    If ex.Message.Contains("password") Then
+                        Dim 输入密码 As String = InputBox($"压缩包 {Path.GetFileName(zipFilePath)} 已加密，请输入密码:", "差分包需要密码")
+                        If String.IsNullOrEmpty(输入密码) Then
+                            MessageBox.Show("操作已取消，无法解压加密的差分包。", "需要密码", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                            Return False
                         End If
-                    Next
-                End Using
+                        密码 = 输入密码
+                        GoTo 重试标签
+                    Else
+                        Throw New NotSupportedException($"不支持的压缩格式: {扩展名}")
+                    End If
+                End Try
             End If
         Catch ex As Exception
-            写入日志框("读取压缩包时出错：" & ex.Message)
+            写入日志框("检查压缩包时出错：" & ex.Message)
+            Return False
         End Try
+
         Return False
     End Function
 
+
     Public Sub 解压压缩包(zipFilePath As String, extractTo As String)
         Try
+            If Not Directory.Exists(extractTo) Then Directory.CreateDirectory(extractTo)
             Dim 扩展名 As String = Path.GetExtension(zipFilePath).ToLowerInvariant()
+            Dim 密码 As String = Nothing
+
+            If 压缩包密码字典.ContainsKey(zipFilePath) Then 密码 = 压缩包密码字典(zipFilePath)
+
             If 扩展名 = ".lz" OrElse zipFilePath.EndsWith(".tar.lz", StringComparison.OrdinalIgnoreCase) Then
                 Using 文件流 As FileStream = File.OpenRead(zipFilePath)
                     Using lz流 As New LZipStream(文件流, SharpCompress.Compressors.CompressionMode.Decompress)
@@ -167,12 +205,7 @@ Public Class Form1
                             While tar读取器.MoveToNextEntry()
                                 If Not tar读取器.Entry.IsDirectory Then
                                     Dim 目标路径 As String = Path.Combine(extractTo, tar读取器.Entry.Key.Replace("/", Path.DirectorySeparatorChar))
-                                    Dim 目标目录 As String = Path.GetDirectoryName(目标路径)
-
-                                    If Not Directory.Exists(目标目录) Then
-                                        Directory.CreateDirectory(目标目录)
-                                    End If
-
+                                    Directory.CreateDirectory(Path.GetDirectoryName(目标路径))
                                     tar读取器.WriteEntryTo(目标路径)
                                 End If
                             End While
@@ -186,29 +219,43 @@ Public Class Form1
                             While tar读取器.MoveToNextEntry()
                                 If Not tar读取器.Entry.IsDirectory Then
                                     Dim 目标路径 As String = Path.Combine(extractTo, tar读取器.Entry.Key.Replace("/", Path.DirectorySeparatorChar))
-                                    Dim 目标目录 As String = Path.GetDirectoryName(目标路径)
-
-                                    If Not Directory.Exists(目标目录) Then
-                                        Directory.CreateDirectory(目标目录)
-                                    End If
-
+                                    Directory.CreateDirectory(Path.GetDirectoryName(目标路径))
                                     tar读取器.WriteEntryTo(目标路径)
                                 End If
                             End While
                         End Using
                     End Using
                 End Using
-            Else
-                Using archive As IArchive = ArchiveFactory.Open(zipFilePath)
-                    For Each entry In archive.Entries
-                        If Not entry.IsDirectory Then
-                            entry.WriteToDirectory(extractTo, New ExtractionOptions With {
-                                .ExtractFullPath = True,
-                                .Overwrite = True
-                            })
+            ElseIf 扩展名 = ".zip" OrElse 扩展名 = ".7z" OrElse 扩展名 = ".rar" Then
+                Dim 成功解压 As Boolean = False
+                Dim 输入的密码 As String = 密码
+重试解压:
+                Try
+                    Dim 选项 As New ReaderOptions With {.Password = 输入的密码}
+                    Using archive As IArchive = ArchiveFactory.Open(zipFilePath, 选项)
+                        archive.WriteToDirectory(extractTo, New ExtractionOptions With {
+                        .ExtractFullPath = True,
+                        .Overwrite = True
+                    })
+                    End Using
+
+                    成功解压 = True
+                    If Not String.IsNullOrEmpty(输入的密码) Then
+                        压缩包密码字典(zipFilePath) = 输入的密码
+                    End If
+                Catch ex As Exception
+                    If ex.Message.Contains("password") Then
+                        Dim 输入密码 As String = InputBox($"压缩包 {Path.GetFileName(zipFilePath)} 已加密，请输入密码:", "差分包需要密码")
+                        If String.IsNullOrEmpty(输入密码) Then
+                            MessageBox.Show("操作已取消，无法解压加密的差分包。", "需要密码", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                            Throw New OperationCanceledException("用户取消密码输入")
                         End If
-                    Next
-                End Using
+                        输入的密码 = 输入密码
+                        GoTo 重试解压
+                    Else
+                        Throw New NotSupportedException($"不支持的压缩格式: {扩展名}")
+                    End If
+                End Try
             End If
         Catch ex As Exception
             写入日志框("解压压缩包时出错：" & ex.Message)
@@ -404,7 +451,7 @@ Public Class Form1
         合并设置UI状态(True)
         任务是否正在运行 = False
 
-        If e.Error IsNot Nothing Then
+        If e IsNot Nothing Then
             MessageBox.Show("合并过程中发生错误，请检查日志！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
         Else
             MessageBox.Show("合并操作成功完成！", "信息：", MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -523,7 +570,7 @@ Public Class Form1
     Private Sub Button5_Click(sender As Object, e As EventArgs) Handles Button5.Click
         Dim ofd As New OpenFileDialog()
         ofd.Multiselect = False
-        ofd.Filter = "压缩包文件 (*.zip;*.7z;*.tar.lz;*.tar.bz2)|*.zip;*.7z;*.tar.lz;*.tar.bz2|所有文件 (*.*)|*.*"
+        ofd.Filter = "压缩包文件 (*.zip;*.7z;*.rar;*.tar.lz;*.tar.bz2)|*.zip;*.7z;*.rar;*.tar.lz;*.tar.bz2|所有文件 (*.*)|*.*"
 
         If ofd.ShowDialog() = DialogResult.OK Then
             Dim fp As String = ofd.FileName
@@ -535,7 +582,7 @@ Public Class Form1
     Private Sub Button6_Click(sender As Object, e As EventArgs) Handles Button6.Click
         Dim ofd As New OpenFileDialog()
         ofd.Multiselect = False
-        ofd.Filter = "压缩包文件 (*.zip;*.7z;*.tar.lz;*.tar.bz2)|*.zip;*.7z;*.tar.lz;*.tar.bz2|所有文件 (*.*)|*.*"
+        ofd.Filter = "压缩包文件 (*.zip;*.7z;*.rar;*.tar.lz;*.tar.bz2)|*.zip;*.7z;*.rar;*.tar.lz;*.tar.bz2|所有文件 (*.*)|*.*"
 
         If ofd.ShowDialog() = DialogResult.OK Then
             Dim fp As String = ofd.FileName
