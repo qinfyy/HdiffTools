@@ -11,6 +11,7 @@ Imports SharpCompress.Compressors.LZMA
 Imports SharpCompress.Writers.Tar
 Imports SharpCompress.Readers
 Imports SharpCompress.Compressors.BZip2
+Imports SevenZip
 
 Public Class Form1
     Delegate Sub 写入日志框委托(text As String)
@@ -41,6 +42,8 @@ Public Class Form1
     Private 压缩包密码字典 As New Dictionary(Of String, String)
 
     Private 成员_自动调整控件大小 As 自动调整控件大小
+
+    Private 七ZipDll As String
 
     Public Sub 写入日志框(text As String)
         If TextBox4.InvokeRequired Then
@@ -171,9 +174,9 @@ Public Class Form1
                     End Using
                 Catch ex As Exception
                     If ex.Message.Contains("password") Then
-                        Dim 输入密码 As String = InputBox($"压缩包 {Path.GetFileName(zipFilePath)} 已加密，请输入密码:", "差分包需要密码")
+                        Dim 输入密码 As String = InputBox($"压缩包 {Path.GetFileName(zipFilePath)} 已加密，请输入密码:", "需要密码")
                         If String.IsNullOrEmpty(输入密码) Then
-                            MessageBox.Show("操作已取消，无法解压加密的差分包。", "需要密码", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                            MessageBox.Show("操作已取消，无法解压加密的差分包。", "警告：", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                             Return False
                         End If
                         密码 = 输入密码
@@ -191,14 +194,15 @@ Public Class Form1
         Return False
     End Function
 
-
     Public Sub 解压压缩包(zipFilePath As String, extractTo As String)
         Try
             If Not Directory.Exists(extractTo) Then Directory.CreateDirectory(extractTo)
             Dim 扩展名 As String = Path.GetExtension(zipFilePath).ToLowerInvariant()
             Dim 密码 As String = Nothing
 
-            If 压缩包密码字典.ContainsKey(zipFilePath) Then 密码 = 压缩包密码字典(zipFilePath)
+            If 压缩包密码字典.ContainsKey(zipFilePath) Then
+                密码 = 压缩包密码字典(zipFilePath)
+            End If
 
             If 扩展名 = ".lz" OrElse zipFilePath.EndsWith(".tar.lz", StringComparison.OrdinalIgnoreCase) Then
                 Using 文件流 As FileStream = File.OpenRead(zipFilePath)
@@ -228,37 +232,102 @@ Public Class Form1
                         End Using
                     End Using
                 End Using
-            ElseIf 扩展名 = ".zip" OrElse 扩展名 = ".7z" OrElse 扩展名 = ".rar" Then
-                Dim 成功解压 As Boolean = False
-                Dim 输入的密码 As String = 密码
-重试解压:
-                Try
-                    Dim 选项 As New ReaderOptions With {.Password = 输入的密码}
-                    Using archive As IArchive = ArchiveFactory.Open(zipFilePath, 选项)
-                        archive.WriteToDirectory(extractTo, New ExtractionOptions With {
-                        .ExtractFullPath = True,
-                        .Overwrite = True
-                    })
-                    End Using
+            ElseIf 扩展名 = ".7z" Then
+                SevenZipExtractor.SetLibraryPath(七ZipDll)
 
-                    成功解压 = True
-                    If Not String.IsNullOrEmpty(输入的密码) Then
+                Dim 需要密码 As Boolean = False
+                Using archive As IArchive = ArchiveFactory.Open(zipFilePath)
+                    For Each entry In archive.Entries
+                        If entry.IsEncrypted Then
+                            需要密码 = True
+                            Exit For
+                        End If
+                    Next
+                End Using
+
+                Dim 输入的密码 As String = 密码
+重试7z:
+                Try
+                    If 需要密码 Then
+                        If String.IsNullOrEmpty(输入的密码) Then
+                            Dim 输入密码 As String = InputBox($"压缩包 {Path.GetFileName(zipFilePath)} 已加密，请输入密码:", "需要密码")
+                            If String.IsNullOrEmpty(输入密码) Then
+                                MessageBox.Show("操作已取消，无法解压加密压缩包。", "警告：", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                                Throw New OperationCanceledException("用户取消密码输入")
+                            End If
+                            输入的密码 = 输入密码
+                        End If
+                        Using extractor As New SevenZipExtractor(zipFilePath, 输入的密码)
+                            extractor.ExtractArchive(extractTo)
+                        End Using
                         压缩包密码字典(zipFilePath) = 输入的密码
+                    Else
+                        Using extractor As New SevenZipExtractor(zipFilePath)
+                            extractor.ExtractArchive(extractTo)
+                        End Using
                     End If
+
                 Catch ex As Exception
                     If ex.Message.Contains("password") Then
-                        Dim 输入密码 As String = InputBox($"压缩包 {Path.GetFileName(zipFilePath)} 已加密，请输入密码:", "差分包需要密码")
+                        Dim 输入密码 As String = InputBox($"压缩包 {Path.GetFileName(zipFilePath)} 已加密，请输入密码:", "需要密码")
                         If String.IsNullOrEmpty(输入密码) Then
-                            MessageBox.Show("操作已取消，无法解压加密的差分包。", "需要密码", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                            MessageBox.Show("操作已取消，无法解压加密压缩包。", "警告：", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                             Throw New OperationCanceledException("用户取消密码输入")
                         End If
                         输入的密码 = 输入密码
-                        GoTo 重试解压
+                        GoTo 重试7z
                     Else
-                        Throw New NotSupportedException($"不支持的压缩格式: {扩展名}")
+                        Throw
                     End If
                 End Try
+            ElseIf 扩展名 = ".zip" OrElse 扩展名 = ".rar" Then
+                Dim 输入的密码 As String = 密码
+重试其他:
+                Try
+                    If String.IsNullOrEmpty(输入的密码) Then
+                        Using archive As IArchive = ArchiveFactory.Open(zipFilePath)
+                            For Each entry In archive.Entries
+                                If Not entry.IsDirectory Then
+                                    entry.WriteToDirectory(extractTo, New ExtractionOptions With {
+                                    .ExtractFullPath = True,
+                                    .Overwrite = True
+                                })
+                                End If
+                            Next
+                        End Using
+                    Else
+                        Dim 选项 As New ReaderOptions With {.Password = 输入的密码}
+                        Using archive As IArchive = ArchiveFactory.Open(zipFilePath, 选项)
+                            For Each entry In archive.Entries
+                                If Not entry.IsDirectory Then
+                                    entry.WriteToDirectory(extractTo, New ExtractionOptions With {
+                                    .ExtractFullPath = True,
+                                    .Overwrite = True
+                                })
+                                End If
+                            Next
+                        End Using
+                        压缩包密码字典(zipFilePath) = 输入的密码
+                    End If
+
+                Catch ex As Exception
+                    If ex.Message.Contains("password") Then
+                        Dim 输入密码 As String = InputBox($"压缩包 {Path.GetFileName(zipFilePath)} 已加密，请输入密码:", "需要密码")
+                        If String.IsNullOrEmpty(输入密码) Then
+                            MessageBox.Show("操作已取消，无法解压加密压缩包。", "警告：", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                            Throw New OperationCanceledException("用户取消密码输入")
+                        End If
+                        输入的密码 = 输入密码
+                        GoTo 重试其他
+                    Else
+                        Throw
+                    End If
+                End Try
+
+            Else
+                Throw New NotSupportedException($"不支持的压缩格式: {扩展名}")
             End If
+
         Catch ex As Exception
             写入日志框("解压压缩包时出错：" & ex.Message)
             Throw
@@ -383,6 +452,12 @@ Public Class Form1
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
         成员_自动调整控件大小 = New 自动调整控件大小()
         成员_自动调整控件大小.注册窗体控件(Me)
+
+        If IntPtr.Size = 8 Then ' 64位
+            七ZipDll = "x64\\7z.dll"
+        Else ' 32位
+            七ZipDll = "x86\\7z.dll"
+        End If
 
         If Not CheckBox1.Checked Then
             Button4.Enabled = False
@@ -612,7 +687,7 @@ Public Class Form1
 
     Private Sub 制作选择差分包_Click(sender As Object, e As EventArgs) Handles 制作选择差分包.Click
         Dim sfd As New SaveFileDialog()
-        sfd.Filter = "zip 文件 (*.zip)|*.zip|tar.lz 文件 (*.tar.lz)|*.tar.lz|tar.bz2 文件 (*.tar.bz2)|*.tar.bz2|所有文件 (*.*)|*.*"
+        sfd.Filter = "zip 文件 (*.zip)|*.zip|.7z 文件 (*.7z)|*.7z|tar.lz 文件 (*.tar.lz)|*.tar.lz|tar.bz2 文件 (*.tar.bz2)|*.tar.bz2"
         sfd.FilterIndex = 0
         sfd.RestoreDirectory = True
         sfd.OverwritePrompt = True
@@ -620,7 +695,7 @@ Public Class Form1
 
         If sfd.ShowDialog() = DialogResult.OK Then
             Dim fp As String = sfd.FileName
-            Dim 后缀 As String() = {"", ".zip", ".tar.lz", ".tar.bz2", ""}
+            Dim 后缀 As String() = {"", ".zip", ".7z", ".tar.lz", ".tar.bz2", ""}
             Dim 预计后缀 As String = 后缀(sfd.FilterIndex)
             If 预计后缀 <> "" Then
                 While fp.EndsWith(预计后缀 & 预计后缀, StringComparison.OrdinalIgnoreCase)
@@ -894,6 +969,14 @@ Public Class Form1
                     End Using
                 End Using
             End Using
+        ElseIf 扩展名 = ".7z" Then
+            SevenZipCompressor.SetLibraryPath(七ZipDll)
+            Dim 七Z压缩器 As New SevenZipCompressor()
+            七Z压缩器.CompressionMethod = CompressionMethod.Lzma2
+            七Z压缩器.CompressionLevel = CompressionLevel.Ultra
+            七Z压缩器.DirectoryStructure = True
+            七Z压缩器.IncludeEmptyDirectories = True
+            七Z压缩器.CompressDirectory(输出目录, 压缩包路径)
         Else
             Throw New NotSupportedException($"不支持的压缩格式: {扩展名}")
         End If
