@@ -40,6 +40,8 @@ Public Class Form1
 
     Private 压缩包密码字典 As New Dictionary(Of String, String)
 
+    Private 成员_自动调整控件大小 As 自动调整控件大小
+
     Public Sub 写入日志框(text As String)
         If TextBox4.InvokeRequired Then
             TextBox4.Invoke(New 写入日志框委托(AddressOf 写入日志框), text)
@@ -379,6 +381,9 @@ Public Class Form1
     End Function
 
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        成员_自动调整控件大小 = New 自动调整控件大小()
+        成员_自动调整控件大小.注册窗体控件(Me)
+
         If Not CheckBox1.Checked Then
             Button4.Enabled = False
             TextBox3.Enabled = False
@@ -451,7 +456,7 @@ Public Class Form1
         合并设置UI状态(True)
         任务是否正在运行 = False
 
-        If e IsNot Nothing Then
+        If e.Error IsNot Nothing OrElse TypeOf e.Result Is Exception Then
             MessageBox.Show("合并过程中发生错误，请检查日志！", "错误：", MessageBoxButtons.OK, MessageBoxIcon.Error)
         Else
             MessageBox.Show("合并操作成功完成！", "信息：", MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -909,6 +914,12 @@ Public Class Form1
             写入日志框(ex.ToString())
         Else
             MessageBox.Show("差分包制作成功!", "信息：", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        End If
+    End Sub
+
+    Private Sub Form1_Resize(sender As Object, e As EventArgs) Handles MyBase.Resize
+        If 成员_自动调整控件大小 IsNot Nothing Then
+            成员_自动调整控件大小.调整窗体控件大小(Me)
         End If
     End Sub
 End Class
